@@ -8,6 +8,7 @@ import devices.ky_009 as KY009
 import time
 from datetime import datetime
 from cases import getSolarBlindStatus
+import cases
 
 def get_values():
     try:
