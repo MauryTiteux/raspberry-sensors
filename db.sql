@@ -11,6 +11,7 @@ CREATE TABLE logs (
 );
 
 CREATE TABLE settings (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     summer_opening_hour INT DEFAULT 6,
     summer_closing_hour INT DEFAULT 23,
     winter_opening_hour INT DEFAULT 7,

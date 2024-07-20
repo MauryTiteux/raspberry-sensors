@@ -4,12 +4,15 @@ from devices.tsl2591 import TSL2591
 from tools.db import db
 
 def getSolarBlindStatus():
-    cursor = db.cursor(dictionary=True)
+    try:
+        cursor = db.cursor(dictionary=True)
 
-    cursor.execute("SELECT * FROM settings")
-    settings = cursor.fetchone()
+        cursor.execute("SELECT * FROM settings")
+        settings = cursor.fetchone()
 
-    cursor.close()
+        cursor.close()
+    except:
+        print('error')
     
     opening_hours = {
         'summer': [settings['summer_opening_hour'], settings['summer_closing_hour']],

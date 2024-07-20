@@ -27,24 +27,28 @@ ten_minutes_ago_lux_seconds = LUX_CACHE_INTERVAL
 seconds = WATCHER_INTERVAL
 message = get_values()
 
-try:
-    # Log lorsqu'une nouvelle session est lancée / le script démarre
-    data = (
-        DHT11.temperature,
-        DHT11.humidity,
-        int(TSL2591.lux),
-        None,
-        'on',
-        get_values(),
-        'Nouvelle session démarrée'
-    )
+# Log lorsqu'une nouvelle session est lancée / le script démarre
+data = (
+    DHT11.temperature,
+    DHT11.humidity,
+    int(TSL2591.lux),
+    None,
+    'on',
+    get_values(),
+    'Nouvelle session démarrée'
+)
 
+try:
     cursor = db.cursor()
 
     cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+    db.commit()
 
     cursor.close()
-
+except:
+    print('error')
+ 
+try:
     while True:
         LCD.clear()
         KY029.set_green()
@@ -68,7 +72,16 @@ try:
             seconds = seconds - 1
 
         if (ten_minutes_ago_lux_seconds == 1):
-            ten_minutes_ago_lux = int(TSL2591.lux)
+            try:
+                cursor = db.cursor()
+
+                cursor.execute(f'UPDATE settings SET previous_lux = {str(TSL2591.lux)} WHERE id = 1')
+                db.commit()
+
+                cursor.close()
+            except:
+                print('error')
+
             ten_minutes_ago_lux_seconds = LUX_CACHE_INTERVAL
         else:
             ten_minutes_ago_lux_seconds = ten_minutes_ago_lux_seconds - 1
@@ -92,7 +105,7 @@ try:
         try:
             status = getSolarBlindStatus()
 
-            if (status == 'off'):
+            if (status == 'on'):
                 KY009.set_yellow()
             else:
                 KY009.set_blue()
@@ -105,14 +118,20 @@ try:
                     int(TSL2591.lux),
                     status,
                     'on',
-                    get_values()
+                    get_values(),
+                    'Hello'
                 )
 
-                cursor = db.cursor()
+                try:
+                    cursor = db.cursor()
 
-                cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message) VALUES (%s, %s, %s, %s, %s, %s)", data)
+                    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+                    db.commit()
 
-                cursor.close()
+                    cursor.close()
+                except:
+                    print('error')
+
 
         except Exception as e:
             # On log lorsqu'il y a une erreur mais que le script tourne toujours
@@ -123,20 +142,24 @@ try:
                 previous_log['solar_blind_status'],
                 'on',
                 get_values(),
-                str(e)
+                'Error'
             }
 
-            cursor = db.cursor()
+            try:
+                cursor = db.cursor()
 
-            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+                cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+                db.commit()
 
-            cursor.close()
+                cursor.close()
+            except:
+                print('error')
+
 
             KY029.set_red()
 
         time.sleep(1)
-except Exception as e:
-
+except:
     # On log lorsqu'il y a une erreur mais que le script s'arrête
     cursor = db.cursor(dictionary=True)
 
@@ -152,13 +175,14 @@ except Exception as e:
         previous_log['solar_blind_status'],
         'off',
         get_values(),
-        str(e)
+        'Fatal error'
     }
 
     cursor = db.cursor()
 
     cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
 
+    db.commit()
     cursor.close()
 
     KY029.set_red()
