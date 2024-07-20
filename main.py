@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 from cases import getSolarBlindStatus
 import cases
+from tools.db import db
 
 def get_values():
     try:
@@ -27,6 +28,23 @@ seconds = WATCHER_INTERVAL
 message = get_values()
 
 try:
+    # Log lorsqu'une nouvelle session est lancée / le script démarre
+    data = (
+        DHT11.temperature,
+        DHT11.humidity,
+        int(TSL2591.lux),
+        None,
+        'on',
+        get_values(),
+        'Nouvelle session démarrée'
+    )
+
+    cursor = db.cursor()
+
+    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+
+    cursor.close()
+
     while True:
         LCD.clear()
         KY029.set_green()
@@ -63,16 +81,84 @@ try:
         LCD.putstr(message)
         LCD.putstr(str(seconds) + 's - ' + datetime.strftime(datetime.now(), '%H:%M:%S'))
 
-        try:
-            status = getSolarBlindStatus(ten_minutes_ago_lux)
+        # On récupère le log précedent 
+        cursor = db.cursor(dictionary=True)
 
-            if (status == 'open'):
+        cursor.execute("SELECT * FROM logs ORDER BY created_at DESC LIMIT 0,1")
+        previous_log = cursor.fetchone()
+
+        cursor.close()
+
+        try:
+            status = getSolarBlindStatus()
+
+            if (status == 'off'):
                 KY009.set_yellow()
             else:
                 KY009.set_blue()
-        except:
+
+            # On log au changement de statut
+            if (previous_log['solar_blind_status'] != status):
+                data = (
+                    DHT11.temperature,
+                    DHT11.humidity,
+                    int(TSL2591.lux),
+                    status,
+                    'on',
+                    get_values()
+                )
+
+                cursor = db.cursor()
+
+                cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message) VALUES (%s, %s, %s, %s, %s, %s)", data)
+
+                cursor.close()
+
+        except Exception as e:
+            # On log lorsqu'il y a une erreur mais que le script tourne toujours
+            data = {
+                DHT11.temperature,
+                DHT11.humidity,
+                int(TSL2591.lux),
+                previous_log['solar_blind_status'],
+                'on',
+                get_values(),
+                str(e)
+            }
+
+            cursor = db.cursor()
+
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+
+            cursor.close()
+
             KY029.set_red()
 
         time.sleep(1)
-except:
+except Exception as e:
+
+    # On log lorsqu'il y a une erreur mais que le script s'arrête
+    cursor = db.cursor(dictionary=True)
+
+    cursor.execute("SELECT * FROM logs ORDER BY created_at DESC LIMIT 0,1")
+    previous_log = cursor.fetchone()
+
+    cursor.close()
+
+    data = {
+        DHT11.temperature,
+        DHT11.humidity,
+        int(TSL2591.lux),
+        previous_log['solar_blind_status'],
+        'off',
+        get_values(),
+        str(e)
+    }
+
+    cursor = db.cursor()
+
+    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+
+    cursor.close()
+
     KY029.set_red()
