@@ -27,18 +27,18 @@ ten_minutes_ago_lux_seconds = LUX_CACHE_INTERVAL
 seconds = WATCHER_INTERVAL
 message = get_values()
 
-# Log lorsqu'une nouvelle session est lancée / le script démarre
-data = (
-    DHT11.temperature,
-    DHT11.humidity,
-    int(TSL2591.lux),
-    None,
-    'on',
-    get_values(),
-    'Nouvelle session démarrée'
-)
-
 try:
+    # Log lorsqu'une nouvelle session est lancée / le script démarre
+    data = (
+        DHT11.temperature,
+        DHT11.humidity,
+        int(TSL2591.lux),
+        None,
+        'on',
+        get_values(),
+        'Nouvelle session démarrée'
+    )
+
     cursor = db.cursor()
 
     cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
@@ -46,7 +46,7 @@ try:
 
     cursor.close()
 except:
-    print('error')
+    print('error 1')
  
 try:
     while True:
@@ -80,7 +80,7 @@ try:
 
                 cursor.close()
             except:
-                print('error')
+                print('error 2')
 
             ten_minutes_ago_lux_seconds = LUX_CACHE_INTERVAL
         else:
@@ -103,7 +103,27 @@ try:
         cursor.close()
 
         try:
-            status = getSolarBlindStatus()
+            cursor = db.cursor(dictionary=True)
+
+            cursor.execute("SELECT * FROM settings")
+            settings = cursor.fetchone()
+
+            cursor.close()
+
+            if (settings['resume_at']):
+                if (settings['resume_at'].microsecond > datetime.now().microsecond):
+                    status = settings['custom_solar_blind_status']
+                else:
+                    cursor = db.cursor()
+
+                    cursor.execute(f'UPDATE settings SET resume_at = NULL WHERE id = 1')
+                    db.commit()
+
+                    cursor.close()
+
+                    status = getSolarBlindStatus(settings)
+            else:
+                status = getSolarBlindStatus(settings)
 
             if (status == 'on'):
                 KY009.set_yellow()
@@ -130,7 +150,7 @@ try:
 
                     cursor.close()
                 except:
-                    print('error')
+                    print('error 3')
 
 
         except Exception as e:
@@ -146,6 +166,17 @@ try:
             }
 
             try:
+                # Log lorsqu'une nouvelle session est lancée / le script démarre
+                data = (
+                    DHT11.temperature,
+                    DHT11.humidity,
+                    int(TSL2591.lux),
+                    None,
+                    'on',
+                    get_values(),
+                    'Nouvelle session démarrée'
+                )
+
                 cursor = db.cursor()
 
                 cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
@@ -153,8 +184,7 @@ try:
 
                 cursor.close()
             except:
-                print('error')
-
+                print('error 4')
 
             KY029.set_red()
 

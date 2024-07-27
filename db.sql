@@ -22,6 +22,8 @@ CREATE TABLE settings (
     humidity_max INT DEFAULT 70,
     previous_lux INT DEFAULT 0,
     lux INT DEFAULT 80000,
+    custom_solar_blind_status ENUM('on', 'off'),
+    resume_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
