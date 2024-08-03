@@ -17,6 +17,11 @@ def set_yellow():
     led_vert.on()
     led_bleue.off()
 
+def set_off():
+    led_rouge.off()
+    led_vert.off()
+    led_bleue.off()
+
 
 # while True:
 #     set_blue()

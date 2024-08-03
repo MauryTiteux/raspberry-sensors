@@ -46,7 +46,7 @@ try:
 
     cursor.close()
 except:
-    print('error 1')
+    print('Erreur nouvelle session')
  
 try:
     while True:
@@ -80,7 +80,7 @@ try:
 
                 cursor.close()
             except:
-                print('error 2')
+                print('Update settings error')
 
             ten_minutes_ago_lux_seconds = LUX_CACHE_INTERVAL
         else:
@@ -99,6 +99,7 @@ try:
 
         cursor.execute("SELECT * FROM logs ORDER BY created_at DESC LIMIT 0,1")
         previous_log = cursor.fetchone()
+        db.commit()
 
         cursor.close()
 
@@ -107,16 +108,17 @@ try:
 
             cursor.execute("SELECT * FROM settings")
             settings = cursor.fetchone()
+            db.commit()
 
             cursor.close()
 
             if (settings['resume_at']):
-                if (settings['resume_at'].microsecond > datetime.now().microsecond):
+                if (settings['resume_at'].timestamp() > datetime.now().timestamp()):
                     status = settings['custom_solar_blind_status']
                 else:
                     cursor = db.cursor()
 
-                    cursor.execute(f'UPDATE settings SET resume_at = NULL WHERE id = 1')
+                    cursor.execute(f'UPDATE settings SET resume_at = NULL, SET custom_solar_blind_status = NULL WHERE id = 1')
                     db.commit()
 
                     cursor.close()
@@ -124,34 +126,39 @@ try:
                     status = getSolarBlindStatus(settings)
             else:
                 status = getSolarBlindStatus(settings)
-
-            if (status == 'on'):
-                KY009.set_yellow()
-            else:
-                KY009.set_blue()
-
+            
             # On log au changement de statut
             if (previous_log['solar_blind_status'] != status):
-                data = (
-                    DHT11.temperature,
-                    DHT11.humidity,
-                    int(TSL2591.lux),
-                    status,
-                    'on',
-                    get_values(),
-                    'Hello'
-                )
-
                 try:
+                    data = (
+                        DHT11.temperature,
+                        DHT11.humidity,
+                        int(TSL2591.lux),
+                        status,
+                        'on',
+                        get_values()
+                    )
+
                     cursor = db.cursor()
 
-                    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+                    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message) VALUES (%s, %s, %s, %s, %s, %s)", data)
                     db.commit()
 
                     cursor.close()
-                except:
-                    print('error 3')
 
+                    for second in range(5):
+                        KY009.set_off()
+
+                        time.sleep(0.5)
+
+                        if (status == 'on'):
+                            KY009.set_yellow()
+                        else: 
+                            KY009.set_blue()
+
+                        time.sleep(0.5)
+                except:
+                    print('Error')
 
         except Exception as e:
             # On log lorsqu'il y a une erreur mais que le script tourne toujours
@@ -162,29 +169,15 @@ try:
                 previous_log['solar_blind_status'],
                 'on',
                 get_values(),
-                'Error'
+                'Erreur statut'
             }
 
-            try:
-                # Log lorsqu'une nouvelle session est lancée / le script démarre
-                data = (
-                    DHT11.temperature,
-                    DHT11.humidity,
-                    int(TSL2591.lux),
-                    None,
-                    'on',
-                    get_values(),
-                    'Nouvelle session démarrée'
-                )
+            cursor = db.cursor()
 
-                cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
 
-                cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
-                db.commit()
-
-                cursor.close()
-            except:
-                print('error 4')
+            cursor.close()
 
             KY029.set_red()
 
@@ -195,6 +188,7 @@ except:
 
     cursor.execute("SELECT * FROM logs ORDER BY created_at DESC LIMIT 0,1")
     previous_log = cursor.fetchone()
+    db.commit()
 
     cursor.close()
 

@@ -12,7 +12,7 @@ def getSolarBlindStatus(settings):
     date = datetime.now()
     current_season = 'summer' if date.month > 3 and date.month < 10 else 'winter'
     current_opening_hours = opening_hours[current_season]
-
+    
     humidity = DHT11.humidity
     temperature = DHT11.temperature
     lux = int(TSL2591.lux)
