@@ -25,8 +25,15 @@ lux = int(TSL2591.lux)
 ten_minutes_ago_lux = lux
 ten_minutes_ago_lux_seconds = LUX_CACHE_INTERVAL
 
+cursor = db.cursor(dictionary=True)
+cursor.execute("SELECT * FROM settings")
+settings = cursor.fetchone()
+db.commit()
+cursor.close()
+
 seconds = WATCHER_INTERVAL
 message = get_values(temperature, humidity, lux)
+previous_resume_at = settings['resume_at']
 
 def print_on_lcd(message):
     char_missing_first_line = CHAR_PER_LINE - len(message)
@@ -112,17 +119,51 @@ while True:
         if (settings['resume_at']):
             if (settings['resume_at'].timestamp() > datetime.now().timestamp()):
                 status = settings['custom_solar_blind_status']
+
+                if (previous_resume_at is None):
+                    data = (
+                        temperature,
+                        humidity,
+                        lux,
+                        status,
+                        'on',
+                        get_values(temperature, humidity, lux),
+                        'Mode manuel activé'
+                    )
+
+                    cursor = db.cursor()
+                    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+                    db.commit()
+                    cursor.close()
+
+                    previous_resume_at = settings['resume_at']
             else:
                 cursor = db.cursor()
-
                 cursor.execute(f'UPDATE settings SET resume_at = NULL, SET custom_solar_blind_status = NULL WHERE id = 1')
                 db.commit()
-
                 cursor.close()
 
                 status = getSolarBlindStatus(settings, temperature, humidity, lux)
         else:
             status = getSolarBlindStatus(settings, temperature, humidity, lux)
+
+        if (previous_resume_at and settings['resume_at'] is None):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
+                'on',
+                get_values(temperature, humidity, lux),
+                'Mode manuel désactivé'
+            )
+
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
+            cursor.close()
+
+            previous_resume_at = None
 
         # On log au changement de statut
         if (previous_log['solar_blind_status'] != status):
@@ -176,6 +217,11 @@ while True:
             get_values(temperature, humidity, lux),
             '❌ {0}'.format(e.args[0] if e.args[0] else message)
         )
+
+        if (status == 'on'):
+            KY009.set_yellow()
+        else: 
+            KY009.set_blue()
 
         cursor = db.cursor()
         cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
