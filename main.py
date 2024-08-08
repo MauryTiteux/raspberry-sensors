@@ -11,202 +11,176 @@ from cases import getSolarBlindStatus
 import cases
 from tools.db import db
 
-def get_values():
-    try:
-        return '{0}C {1}% {2} lx'.format(DHT11.temperature, DHT11.humidity, int(TSL2591.lux))
-    except:
-        return 'sensors_error'
+def get_values(temperature, humidity, lux):
+    return '{0}C {1}% {2} lx'.format(temperature, humidity, lux)
 
 WATCHER_INTERVAL = 10
 LUX_CACHE_INTERVAL = 600
 CHAR_PER_LINE = 16
 
-ten_minutes_ago_lux = int(TSL2591.lux)
+humidity = DHT11.humidity
+temperature = DHT11.temperature
+lux = int(TSL2591.lux)
+
+ten_minutes_ago_lux = lux
 ten_minutes_ago_lux_seconds = LUX_CACHE_INTERVAL
 
 seconds = WATCHER_INTERVAL
-message = get_values()
+message = get_values(temperature, humidity, lux)
 
-try:
-    # Log lorsqu'une nouvelle session est lancée / le script démarre
-    data = (
-        DHT11.temperature,
-        DHT11.humidity,
-        int(TSL2591.lux),
-        None,
-        'on',
-        get_values(),
-        'Nouvelle session démarrée'
-    )
+def print_on_lcd(message):
+    char_missing_first_line = CHAR_PER_LINE - len(message)
 
-    cursor = db.cursor()
+    if (char_missing_first_line != 0):
+        message += ' ' * char_missing_first_line
 
-    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
-    db.commit()
+    LCD.putstr(message)
+    LCD.putstr(str(seconds) + 's - ' + datetime.strftime(datetime.now(), '%H:%M:%S'))
 
-    cursor.close()
-except:
-    print('Erreur nouvelle session')
- 
-try:
-    while True:
-        LCD.clear()
-        KY029.set_green()
+# Log lorsqu'une nouvelle session est lancée / le script démarre
+status = None
 
+data = (
+    temperature,
+    humidity,
+    lux,
+    status,
+    'on',
+    get_values(temperature, humidity, lux),
+    'Nouvelle session démarrée'
+)
+
+cursor = db.cursor()
+
+cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+db.commit()
+
+cursor.close()
+
+while True:
+    LCD.clear()
+
+    try:
         if (get_button_state() == 0):
-            message = get_values()
-            
-            if (message == 'sensors_error'):
-                seconds = seconds
-            else:
-                seconds = WATCHER_INTERVAL
+            humidity = DHT11.humidity
+            temperature = DHT11.temperature
+            lux = int(TSL2591.lux)
+
+            message = get_values(temperature, humidity, lux)
+
+            seconds = WATCHER_INTERVAL
 
         if (seconds == 1):
-            message = get_values()
+            humidity = DHT11.humidity
+            temperature = DHT11.temperature
+            lux = int(TSL2591.lux)
 
-            if (message == 'sensors_error'):
-                seconds = 1
-            else:
-                seconds = WATCHER_INTERVAL
+            message = get_values(temperature, humidity, lux)
+
+            seconds = WATCHER_INTERVAL
         else:        
             seconds = seconds - 1
 
+        KY029.set_green()
+
         if (ten_minutes_ago_lux_seconds == 1):
-            try:
-                cursor = db.cursor()
+            cursor = db.cursor()
 
-                cursor.execute(f'UPDATE settings SET previous_lux = {str(TSL2591.lux)} WHERE id = 1')
-                db.commit()
+            cursor.execute(f'UPDATE settings SET previous_lux = {str(lux)} WHERE id = 1')
+            db.commit()
 
-                cursor.close()
-            except:
-                print('Update settings error')
+            cursor.close()
 
             ten_minutes_ago_lux_seconds = LUX_CACHE_INTERVAL
         else:
             ten_minutes_ago_lux_seconds = ten_minutes_ago_lux_seconds - 1
 
-        char_missing_first_line = CHAR_PER_LINE - len(message)
-
-        if (char_missing_first_line != 0):
-            message += ' ' * char_missing_first_line
-
-        LCD.putstr(message)
-        LCD.putstr(str(seconds) + 's - ' + datetime.strftime(datetime.now(), '%H:%M:%S'))
-
         # On récupère le log précedent 
         cursor = db.cursor(dictionary=True)
-
-        cursor.execute("SELECT * FROM logs ORDER BY created_at DESC LIMIT 0,1")
+        cursor.execute("SELECT * FROM logs ORDER BY id DESC LIMIT 1")
         previous_log = cursor.fetchone()
         db.commit()
-
         cursor.close()
 
-        try:
-            cursor = db.cursor(dictionary=True)
+        # On récupère les settings
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM settings")
+        settings = cursor.fetchone()
+        db.commit()
+        cursor.close()
 
-            cursor.execute("SELECT * FROM settings")
-            settings = cursor.fetchone()
-            db.commit()
-
-            cursor.close()
-
-            if (settings['resume_at']):
-                if (settings['resume_at'].timestamp() > datetime.now().timestamp()):
-                    status = settings['custom_solar_blind_status']
-                else:
-                    cursor = db.cursor()
-
-                    cursor.execute(f'UPDATE settings SET resume_at = NULL, SET custom_solar_blind_status = NULL WHERE id = 1')
-                    db.commit()
-
-                    cursor.close()
-
-                    status = getSolarBlindStatus(settings)
+        if (settings['resume_at']):
+            if (settings['resume_at'].timestamp() > datetime.now().timestamp()):
+                status = settings['custom_solar_blind_status']
             else:
-                status = getSolarBlindStatus(settings)
-            
-            # On log au changement de statut
-            if (previous_log['solar_blind_status'] != status):
-                try:
-                    data = (
-                        DHT11.temperature,
-                        DHT11.humidity,
-                        int(TSL2591.lux),
-                        status,
-                        'on',
-                        get_values()
-                    )
+                cursor = db.cursor()
 
-                    cursor = db.cursor()
+                cursor.execute(f'UPDATE settings SET resume_at = NULL, SET custom_solar_blind_status = NULL WHERE id = 1')
+                db.commit()
 
-                    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message) VALUES (%s, %s, %s, %s, %s, %s)", data)
-                    db.commit()
+                cursor.close()
 
-                    cursor.close()
+                status = getSolarBlindStatus(settings, temperature, humidity, lux)
+        else:
+            status = getSolarBlindStatus(settings, temperature, humidity, lux)
 
-                    for second in range(5):
-                        KY009.set_off()
-
-                        time.sleep(0.5)
-
-                        if (status == 'on'):
-                            KY009.set_yellow()
-                        else: 
-                            KY009.set_blue()
-
-                        time.sleep(0.5)
-                except:
-                    print('Error')
-
-        except Exception as e:
-            # On log lorsqu'il y a une erreur mais que le script tourne toujours
-            data = {
-                DHT11.temperature,
-                DHT11.humidity,
-                int(TSL2591.lux),
-                previous_log['solar_blind_status'],
+        # On log au changement de statut
+        if (previous_log['solar_blind_status'] != status):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
                 'on',
-                get_values(),
-                'Erreur statut'
-            }
+                get_values(temperature, humidity, lux)
+            )
 
             cursor = db.cursor()
-
-            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message) VALUES (%s, %s, %s, %s, %s, %s)", data)
             db.commit()
-
             cursor.close()
 
-            KY029.set_red()
+            for second in range(5):
+                KY009.set_off()
+                LCD.clear()
 
-        time.sleep(1)
-except:
-    # On log lorsqu'il y a une erreur mais que le script s'arrête
-    cursor = db.cursor(dictionary=True)
+                time.sleep(0.5)
 
-    cursor.execute("SELECT * FROM logs ORDER BY created_at DESC LIMIT 0,1")
-    previous_log = cursor.fetchone()
-    db.commit()
+                humidity = DHT11.humidity
+                temperature = DHT11.temperature
+                lux = int(TSL2591.lux)
 
-    cursor.close()
+                message = get_values(temperature, humidity, lux)
+                print_on_lcd(message)
 
-    data = {
-        DHT11.temperature,
-        DHT11.humidity,
-        int(TSL2591.lux),
-        previous_log['solar_blind_status'],
-        'off',
-        get_values(),
-        'Fatal error'
-    }
+                if (status == 'on'):
+                    KY009.set_yellow()
+                else: 
+                    KY009.set_blue()
 
-    cursor = db.cursor()
+                time.sleep(0.5)
+                LCD.clear()
 
-    cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+    except RuntimeError as e:
+        KY029.set_red()
 
-    db.commit()
-    cursor.close()
+        seconds = 1
+        message = 'Sensor errors'
+        
+        data = (
+            temperature,
+            humidity,
+            lux,
+            status,
+            'on',
+            get_values(temperature, humidity, lux),
+            '❌ {0}'.format(e.args[0] if e.args[0] else message)
+        )
 
-    KY029.set_red()
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+        db.commit()
+        cursor.close()
+
+    print_on_lcd(message)
+    time.sleep(1)
