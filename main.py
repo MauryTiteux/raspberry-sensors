@@ -35,6 +35,8 @@ seconds = WATCHER_INTERVAL
 message = get_values(temperature, humidity, lux)
 previous_resume_at = settings['resume_at']
 
+timer_before_changing_status = 0
+
 def print_on_lcd(message):
     char_missing_first_line = CHAR_PER_LINE - len(message)
 
@@ -116,6 +118,20 @@ while True:
         db.commit()
         cursor.close()
 
+        # Récupération des events
+        cursor = db.cursor(dictionary=True)
+        cursor.execute(f'SELECT * FROM events WHERE {datetime.now().timestamp()} BETWEEN start_at AND end_at')
+        event = cursor.fetchone()
+        db.commit()
+        cursor.close()
+
+        # Récupération des récurrences
+        cursor = db.cursor(dictionary=True)
+        cursor.execute(f'SELECT * FROM days WHERE day = {datetime.today().weekday()} AND is_recurrent = 1')
+        recurrent = cursor.fetchone()
+        db.commit()
+        cursor.close()
+
         if (settings['resume_at']):
             if (settings['resume_at'].timestamp() > datetime.now().timestamp()):
                 status = settings['custom_solar_blind_status']
@@ -144,6 +160,9 @@ while True:
                 cursor.close()
 
                 status = getSolarBlindStatus(settings, temperature, humidity, lux)
+        # Si event programmé ou récurrent, on force le statut à off
+        elif (event or recurrent):
+            status = 'off'
         else:
             status = getSolarBlindStatus(settings, temperature, humidity, lux)
 
@@ -164,9 +183,50 @@ while True:
             cursor.close()
 
             previous_resume_at = None
+        
+        # Si le log précédent est un autre jour qu'aujourd'hui et qu'on a un event programmé, on log
+        if (event and previous_log['create_at'].weekday() != datetime.today().weekday()):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
+                'on',
+                get_values(temperature, humidity, lux),
+                f"Évenement programmé du {datetime.strftime(event['start_at'], '%D %M %Y')} au {datetime.strftime(event['end_at'], '%D %M %Y')}"
+            )
 
-        # On log au changement de statut
-        if (previous_log['solar_blind_status'] != status):
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
+            cursor.close()
+
+        # Si le log précédent est un autre jour qu'aujourd'hui et qu'on a un event récurrent, on log
+        if (recurrent and previous_log['create_at'].weekday() != datetime.today().weekday()):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
+                'on',
+                get_values(temperature, humidity, lux),
+                f"Ouverture décallée à {recurrent['start_at_hour']}h"
+            )
+
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
+            cursor.close()
+
+        # Si on a un décompte de 5 minutes et décompte les minutes seconde par seconde
+        if (timer_before_changing_status > 0):
+            timer_before_changing_status  = timer_before_changing_status - 1
+
+        # On log au changement de statut et si au moins 5 minutes sont passées
+        if (previous_log['solar_blind_status'] != status and timer_before_changing_status == 0):
+            # On initialise le décompte de 5 minutes
+            timer_before_changing_status = 300
+
             data = (
                 temperature,
                 humidity,
