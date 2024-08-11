@@ -134,6 +134,7 @@ while True:
 
         if (settings['resume_at']):
             if (settings['resume_at'].timestamp() > datetime.now().timestamp()):
+                timer_before_changing_status = 0
                 status = settings['custom_solar_blind_status']
 
                 if (previous_resume_at is None):
@@ -163,6 +164,7 @@ while True:
         # Si event programmé ou récurrent, on force le statut à off
         elif (event or recurrent):
             status = 'off'
+            timer_before_changing_status = 0
         else:
             status = getSolarBlindStatus(settings, temperature, humidity, lux)
 
@@ -224,8 +226,9 @@ while True:
 
         # On log au changement de statut et si au moins 5 minutes sont passées
         if (previous_log['solar_blind_status'] != status and timer_before_changing_status == 0):
-            # On initialise le décompte de 5 minutes
-            timer_before_changing_status = 300
+            # On initialise le décompte de 5 minutes si en mode auto
+            if (settings['resume_at'] is None and event is None and recurrent is None):
+                timer_before_changing_status = 300
 
             data = (
                 temperature,
