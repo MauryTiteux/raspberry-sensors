@@ -187,7 +187,7 @@ while True:
             previous_resume_at = None
         
         # Si le log précédent est un autre jour qu'aujourd'hui et qu'on a un event programmé, on log
-        if (event and previous_log['create_at'].weekday() != datetime.today().weekday()):
+        if (event and previous_log['created_at'].weekday() != datetime.today().weekday()):
             data = (
                 temperature,
                 humidity,
@@ -204,7 +204,7 @@ while True:
             cursor.close()
 
         # Si le log précédent est un autre jour qu'aujourd'hui et qu'on a un event récurrent, on log
-        if (recurrent and previous_log['create_at'].weekday() != datetime.today().weekday()):
+        if (recurrent and previous_log['created_at'].weekday() != datetime.today().weekday()):
             data = (
                 temperature,
                 humidity,
