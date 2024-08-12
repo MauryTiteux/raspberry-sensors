@@ -127,7 +127,7 @@ while True:
 
         # Récupération des récurrences
         cursor = db.cursor(dictionary=True)
-        cursor.execute(f'SELECT * FROM days WHERE day = {datetime.today().weekday()} AND is_recurrent = 1')
+        cursor.execute(f'SELECT * FROM days WHERE day = {datetime.today().weekday()} AND is_recurrent = 1 AND start_at_hour > {datetime.now().hour}')
         recurrent = cursor.fetchone()
         db.commit()
         cursor.close()
