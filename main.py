@@ -50,6 +50,7 @@ message = get_values(temperature, humidity, lux)
 previous_resume_at = settings['resume_at']
 previous_event = event
 previous_recurrent = recurrent
+previous_settings_updated_at = settings['updated_at']
 
 timer_before_changing_status = 0
 
@@ -133,6 +134,26 @@ while True:
         settings = cursor.fetchone()
         db.commit()
         cursor.close()
+
+        if (previous_settings_updated_at.timestamp() < settings['updated_at'].timestamp()):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
+                'on',
+                get_values(temperature, humidity, lux),
+                'Paramètres modifiés'
+            )
+
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
+            cursor.close()
+
+            timer_before_changing_status = 0
+
+        previous_settings_updated_at = settings['updated_at']
 
         # Récupération des events
         cursor = db.cursor(dictionary=True)
