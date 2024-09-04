@@ -31,9 +31,25 @@ settings = cursor.fetchone()
 db.commit()
 cursor.close()
 
+# Récupération des events
+cursor = db.cursor(dictionary=True)
+cursor.execute(f'SELECT * FROM events WHERE NOW() BETWEEN start_at AND end_at')
+event = cursor.fetchone()
+db.commit()
+cursor.close()
+
+# Récupération des récurrences
+cursor = db.cursor(dictionary=True)
+cursor.execute(f'SELECT * FROM days WHERE day = {datetime.today().weekday()} AND is_recurrent = 1 AND start_at_hour > {datetime.now().hour}')
+recurrent = cursor.fetchone()
+db.commit()
+cursor.close()
+
 seconds = WATCHER_INTERVAL
 message = get_values(temperature, humidity, lux)
 previous_resume_at = settings['resume_at']
+previous_event = event
+previous_recurrent = recurrent
 
 timer_before_changing_status = 0
 
@@ -120,7 +136,7 @@ while True:
 
         # Récupération des events
         cursor = db.cursor(dictionary=True)
-        cursor.execute(f'SELECT * FROM events WHERE {datetime.now().timestamp()} BETWEEN start_at AND end_at')
+        cursor.execute(f'SELECT * FROM events WHERE NOW() BETWEEN start_at AND end_at')
         event = cursor.fetchone()
         db.commit()
         cursor.close()
@@ -131,6 +147,81 @@ while True:
         recurrent = cursor.fetchone()
         db.commit()
         cursor.close()
+
+        if (previous_event is None and event):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
+                'on',
+                get_values(temperature, humidity, lux),
+                'Événement agenda commencé'
+            )
+
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
+            cursor.close()
+
+        if (previous_event and event is None):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
+                'on',
+                get_values(temperature, humidity, lux),
+                'Événement agenda terminé'
+            )
+
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
+            cursor.close()
+
+            cursor = db.cursor()
+            cursor.execute(f"DELETE FROM events WHERE id = {previous_event['id']}")
+            db.commit()
+            cursor.close()
+
+            previous_event = None
+
+        if (recurrent and previous_recurrent is None):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
+                'on',
+                get_values(temperature, humidity, lux),
+                f"Automatisation décallée à {recurrent['start_at_hour']}h"
+            )
+
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
+            cursor.close()
+
+            previous_recurrent = None
+
+        if (recurrent is None and previous_recurrent):
+            data = (
+                temperature,
+                humidity,
+                lux,
+                status,
+                'on',
+                get_values(temperature, humidity, lux),
+                f"Heure dépassée, reprise automatique"
+            )
+
+            cursor = db.cursor()
+            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
+            db.commit()
+            cursor.close()
+
+            previous_recurrent = None
 
         if (settings['resume_at']):
             if (settings['resume_at'].timestamp() > datetime.now().timestamp()):
@@ -156,7 +247,7 @@ while True:
                     previous_resume_at = settings['resume_at']
             else:
                 cursor = db.cursor()
-                cursor.execute(f'UPDATE settings SET resume_at = NULL, SET custom_solar_blind_status = NULL WHERE id = 1')
+                cursor.execute(f'UPDATE settings SET resume_at = NULL, custom_solar_blind_status = NULL WHERE id = 1')
                 db.commit()
                 cursor.close()
 
@@ -165,6 +256,8 @@ while True:
         elif (event or recurrent):
             status = 'off'
             timer_before_changing_status = 0
+            previous_event = event
+            previous_recurrent = recurrent
         else:
             status = getSolarBlindStatus(settings, temperature, humidity, lux)
 
@@ -185,40 +278,6 @@ while True:
             cursor.close()
 
             previous_resume_at = None
-        
-        # Si le log précédent est un autre jour qu'aujourd'hui et qu'on a un event programmé, on log
-        if (event and previous_log['created_at'].weekday() != datetime.today().weekday()):
-            data = (
-                temperature,
-                humidity,
-                lux,
-                status,
-                'on',
-                get_values(temperature, humidity, lux),
-                f"Évenement programmé du {datetime.strftime(event['start_at'], '%D %M %Y')} au {datetime.strftime(event['end_at'], '%D %M %Y')}"
-            )
-
-            cursor = db.cursor()
-            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
-            db.commit()
-            cursor.close()
-
-        # Si le log précédent est un autre jour qu'aujourd'hui et qu'on a un event récurrent, on log
-        if (recurrent and previous_log['created_at'].weekday() != datetime.today().weekday()):
-            data = (
-                temperature,
-                humidity,
-                lux,
-                status,
-                'on',
-                get_values(temperature, humidity, lux),
-                f"Ouverture décallée à {recurrent['start_at_hour']}h"
-            )
-
-            cursor = db.cursor()
-            cursor.execute("INSERT INTO logs(temperature, humidity, lux, solar_blind_status, script_status, message, metadata) VALUES (%s, %s, %s, %s, %s, %s, %s)", data)
-            db.commit()
-            cursor.close()
 
         # Si on a un décompte de 5 minutes et décompte les minutes seconde par seconde
         if (timer_before_changing_status > 0):
